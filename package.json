@@ -21,7 +21,8 @@
     "@react-navigation/native-stack": "latest",
     "react-native-screens": "latest",
     "react-native-safe-area-context": "latest",
-    "zustand": "latest"
+    "zustand": "latest",
+    "@react-native-community/slider": "latest"
   },
   "devDependencies": {
     "@babel/core": "latest",
