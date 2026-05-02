@@ -22,7 +22,9 @@
     "react-native-screens": "latest",
     "react-native-safe-area-context": "latest",
     "zustand": "latest",
-    "@react-native-community/slider": "latest"
+    "@react-native-community/slider": "latest",
+    "react-native-gesture-handler": "latest",
+    "react-native-reanimated": "latest"
   },
   "devDependencies": {
     "@babel/core": "latest",
