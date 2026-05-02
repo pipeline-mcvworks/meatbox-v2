@@ -6,52 +6,81 @@ import {
   StyleSheet,
   TextInput,
   Switch,
-  Animated,
 } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 import { Countdown } from '../components/recorder/Countdown';
 import { RecordButton } from '../components/recorder/RecordButton';
 import { RecordingTimer } from '../components/recorder/RecordingTimer';
 import { InputMeter } from '../components/recorder/InputMeter';
+import { audioRecorderService } from '../audio';
+import { useAudioStore } from '../state/audioStore';
 
 export function RecordScreen(): React.JSX.Element {
-  const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
+  const {
+    micPermission,
+    recordingStatus,
+    setMicPermission,
+    setRecordingStatus,
+    setCurrentRecordingUri,
+    setDurationSeconds,
+  } = useAudioStore();
+
   const [isCountingDown, setIsCountingDown] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [bpm, setBpm] = useState('120');
   const [metronomeOn, setMetronomeOn] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isRecording = recordingStatus === 'recording';
+
+  const handleGrantPermission = async () => {
+    const status = await audioRecorderService.requestPermission();
+    setMicPermission(status);
+  };
+
   const handleStartPress = () => {
     if (micPermission === 'denied') {
-      // Placeholder: would request permission
       return;
     }
     setIsCountingDown(true);
   };
 
-  const handleCountdownComplete = () => {
+  const handleCountdownComplete = async () => {
     setIsCountingDown(false);
-    setIsRecording(true);
-    setElapsedSeconds(0);
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
+    try {
+      await audioRecorderService.start();
+      setRecordingStatus('recording');
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.warn('Failed to start recording:', err);
+    }
   };
 
-  const handleStopPress = () => {
+  const handleStopPress = async () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    setIsRecording(false);
+    if (isRecording) {
+      try {
+        const { uri, durationSeconds } = await audioRecorderService.stop();
+        setCurrentRecordingUri(uri);
+        setDurationSeconds(durationSeconds);
+      } catch (err) {
+        console.warn('Failed to stop recording:', err);
+      }
+    }
+    setRecordingStatus('stopped');
   };
 
-  const handleRetry = () => {
-    handleStopPress();
+  const handleRetry = async () => {
+    await handleStopPress();
     setIsCountingDown(false);
     setElapsedSeconds(0);
+    setRecordingStatus('idle');
   };
 
   useEffect(() => {
@@ -64,15 +93,20 @@ export function RecordScreen(): React.JSX.Element {
     <View style={styles.container}>
       <Text style={styles.title}>Record</Text>
 
-      {/* Mic Permission State Placeholder */}
+      {/* Mic Permission State */}
       <View style={styles.permissionBanner}>
         <Text style={styles.permissionText}>
-          Mic: {micPermission === 'granted' ? '✅ Granted' : micPermission === 'denied' ? '❌ Denied' : '⚠️ Undetermined'}
+          Mic:{' '}
+          {micPermission === 'granted'
+            ? '✅ Granted'
+            : micPermission === 'denied'
+            ? '❌ Denied'
+            : '⚠️ Undetermined'}
         </Text>
         {micPermission !== 'granted' && (
           <TouchableOpacity
             style={styles.permissionButton}
-            onPress={() => setMicPermission('granted')}
+            onPress={handleGrantPermission}
             activeOpacity={0.75}
           >
             <Text style={styles.permissionButtonText}>Grant Permission</Text>

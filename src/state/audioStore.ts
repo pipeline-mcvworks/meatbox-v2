@@ -17,6 +17,8 @@ export type AudioState = {
   recordingStatus: RecordingStatus;
   /** URI of the most recently completed recording */
   currentRecordingUri: string | null;
+  /** Duration of the most recently completed recording in seconds */
+  durationSeconds: number;
   /** Normalised waveform peak samples (values 0–1) */
   waveformPeaks: number[];
   /** Status of the analysis pipeline for the current recording */
@@ -26,6 +28,7 @@ export type AudioState = {
   setMicPermission: (status: MicPermissionStatus) => void;
   setRecordingStatus: (status: RecordingStatus) => void;
   setCurrentRecordingUri: (uri: string | null) => void;
+  setDurationSeconds: (seconds: number) => void;
   setWaveformPeaks: (peaks: number[]) => void;
   setAnalysisStatus: (status: AnalysisStatus) => void;
   resetAudio: () => void;
@@ -39,6 +42,7 @@ const initialAudioState = {
   micPermission: 'undetermined' as MicPermissionStatus,
   recordingStatus: 'idle' as RecordingStatus,
   currentRecordingUri: null,
+  durationSeconds: 0,
   waveformPeaks: [] as number[],
   analysisStatus: 'idle' as AnalysisStatus,
 };
@@ -51,6 +55,8 @@ export const useAudioStore = create<AudioState>((set) => ({
   setRecordingStatus: (recordingStatus) => set({ recordingStatus }),
 
   setCurrentRecordingUri: (currentRecordingUri) => set({ currentRecordingUri }),
+
+  setDurationSeconds: (durationSeconds) => set({ durationSeconds }),
 
   setWaveformPeaks: (waveformPeaks) => set({ waveformPeaks }),
 

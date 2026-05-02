@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "expo": "latest",
+    "expo-av": "latest",
     "expo-status-bar": "latest",
     "react": "latest",
     "react-native": "latest",

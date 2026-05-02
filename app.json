@@ -8,6 +8,14 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow mouthbeat-machine to access your microphone for recording."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true
     },

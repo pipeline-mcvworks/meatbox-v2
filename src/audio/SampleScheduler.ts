@@ -1,0 +1,161 @@
+import type { IAudioPlaybackService } from './types';
+import type { ISampleScheduler, ScheduledEvent, TickCallback } from './types';
+
+/**
+ * Wall-clock-based sample scheduler.
+ *
+ * Uses setInterval at ~10 ms resolution to walk a sorted event list and
+ * dispatch sample triggers at the correct beat position. All logic is
+ * outside React — the scheduler is a plain class.
+ */
+export class SampleScheduler implements ISampleScheduler {
+  private playbackService: IAudioPlaybackService;
+  private tickCallbacks: TickCallback[] = [];
+  private intervalId: ReturnType<typeof setInterval> | null = null;
+
+  private events: ScheduledEvent[] = [];
+  private bpm: number = 120;
+  private loop: boolean = false;
+  private totalBeats: number = 0;
+
+  /** Current playhead position in beats. */
+  private currentBeat: number = 0;
+  /** Wall-clock timestamp of the last tick (ms). */
+  private lastTickMs: number = 0;
+  /** Index into sorted events of the next event to fire. */
+  private nextEventIndex: number = 0;
+
+  /** Scheduler tick interval in milliseconds. */
+  private static readonly TICK_INTERVAL_MS = 10;
+
+  constructor(playbackService: IAudioPlaybackService) {
+    this.playbackService = playbackService;
+  }
+
+  /**
+   * Register a tick callback. Returns an unsubscribe function.
+   * Multiple subscribers are supported. Callbacks persist across
+   * start()/stop() cycles — the scheduler does NOT clear subscribers
+   * on stop(). Callers should subscribe once at mount and unsubscribe
+   * on unmount.
+   */
+  onTick(callback: TickCallback): () => void {
+    this.tickCallbacks.push(callback);
+    return () => {
+      this.tickCallbacks = this.tickCallbacks.filter((c) => c !== callback);
+    };
+  }
+
+  /**
+   * Internal: halt the running interval and reset playhead state.
+   * Does NOT touch tickCallbacks. Used by both start() (for clean
+   * re-entry) and the public stop().
+   */
+  private _resetPlayback(): void {
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    this.currentBeat = 0;
+    this.nextEventIndex = 0;
+  }
+
+  start(events: ScheduledEvent[], bpm: number, loop: boolean): void {
+    // Halt any prior run and reset position. Subscribers are untouched.
+    this._resetPlayback();
+
+    // Sort events by startBeat ascending
+    this.events = [...events].sort((a, b) => a.startBeat - b.startBeat);
+    this.bpm = bpm;
+    this.loop = loop;
+    this.lastTickMs = Date.now();
+
+    // Compute total beats from last event (round up to next bar of 4)
+    if (this.events.length > 0) {
+      const lastBeat = this.events[this.events.length - 1].startBeat;
+      const bars = Math.ceil((lastBeat + 1) / 4);
+      this.totalBeats = bars * 4;
+    } else {
+      this.totalBeats = 32; // default 8 bars
+    }
+
+    this.intervalId = setInterval(() => this._tick(), SampleScheduler.TICK_INTERVAL_MS);
+  }
+
+  stop(): void {
+    // Halt interval + reset position. tickCallbacks are intentionally preserved
+    // across stop() — subscribers register once at mount and unsubscribe at unmount.
+    this._resetPlayback();
+  }
+
+  private _tick(): void {
+    const now = Date.now();
+    const deltaMs = now - this.lastTickMs;
+    this.lastTickMs = now;
+
+    const beatsPerMs = this.bpm / 60 / 1000;
+    const beatDelta = deltaMs * beatsPerMs;
+    const prevBeat = this.currentBeat;
+    let newBeat = prevBeat + beatDelta;
+
+    // Fire all events whose startBeat falls in [prevBeat, newBeat)
+    while (
+      this.nextEventIndex < this.events.length &&
+      this.events[this.nextEventIndex].startBeat < newBeat
+    ) {
+      const evt = this.events[this.nextEventIndex];
+      this.nextEventIndex++;
+      // Fire and forget — don't await inside setInterval
+      this.playbackService
+        .playSample(evt.lane, evt.velocity)
+        .catch(() => {/* ignore */});
+    }
+
+    // Handle loop / end
+    if (newBeat >= this.totalBeats) {
+      if (this.loop) {
+        newBeat = newBeat % this.totalBeats;
+        this.nextEventIndex = 0;
+        // Re-fire any events at beat 0 that we just looped past
+        while (
+          this.nextEventIndex < this.events.length &&
+          this.events[this.nextEventIndex].startBeat < newBeat
+        ) {
+          const evt = this.events[this.nextEventIndex];
+          this.nextEventIndex++;
+          this.playbackService
+            .playSample(evt.lane, evt.velocity)
+            .catch(() => {/* ignore */});
+        }
+      } else {
+        newBeat = this.totalBeats;
+        this.currentBeat = newBeat;
+        // Notify subscribers with final beat position before stopping.
+        for (const cb of this.tickCallbacks) {
+          try {
+            cb(this.currentBeat);
+          } catch {
+            // ignore
+          }
+        }
+        // Halt interval (callbacks are preserved).
+        if (this.intervalId !== null) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+        }
+        return;
+      }
+    }
+
+    this.currentBeat = newBeat;
+
+    // Notify tick listeners
+    for (const cb of this.tickCallbacks) {
+      try {
+        cb(this.currentBeat);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
