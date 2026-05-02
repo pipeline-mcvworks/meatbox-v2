@@ -3,17 +3,20 @@ import {
   Alert,
   Pressable,
   SafeAreaView,
-  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 import { useProjectStore } from '../state/projectStore';
-import { saveProject } from '../persistence/projectPersistence';
+import { saveProject } from '../persistence/projectStorage';
+import { exportProjectJson } from '../export/exportProjectJson';
+import { exportMidi } from '../export/exportMidi';
+import { exportWav } from '../export/exportWav';
 
 export function ExportScreen(): React.JSX.Element {
   const project = useProjectStore((s) => s.project);
+  const setProject = useProjectStore((s) => s.setProject);
   const [busy, setBusy] = useState<string | null>(null);
 
   const handleSave = async () => {
@@ -23,12 +26,10 @@ export function ExportScreen(): React.JSX.Element {
     }
     setBusy('save');
     try {
-      if (typeof saveProject === 'function') {
-        await saveProject(project);
-        Alert.alert('Saved', 'Project saved locally.');
-      } else {
-        Alert.alert('Saved', 'Project save placeholder (persistence not yet wired).');
-      }
+      const persisted = await saveProject(project);
+      // Reflect bumped updatedAt in the live store.
+      setProject(persisted);
+      Alert.alert('Saved', 'Project saved locally.');
     } catch (err: any) {
       Alert.alert('Save failed', err?.message ?? String(err));
     } finally {
@@ -43,11 +44,7 @@ export function ExportScreen(): React.JSX.Element {
     }
     setBusy('json');
     try {
-      const json = JSON.stringify(project, null, 2);
-      await Share.share({
-        title: `${project.name ?? 'Project'}.json`,
-        message: json,
-      });
+      await exportProjectJson(project);
     } catch (err: any) {
       Alert.alert('Export failed', err?.message ?? String(err));
     } finally {
@@ -55,8 +52,28 @@ export function ExportScreen(): React.JSX.Element {
     }
   };
 
-  const handleComingSoon = (label: string) => {
-    Alert.alert(label, 'Coming soon.');
+  const handleExportMidi = async () => {
+    if (!project) return;
+    setBusy('midi');
+    try {
+      await exportMidi(project);
+    } catch (err: any) {
+      Alert.alert('MIDI export', err?.message ?? String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleExportWav = async () => {
+    if (!project) return;
+    setBusy('wav');
+    try {
+      await exportWav(project);
+    } catch (err: any) {
+      Alert.alert('WAV export', err?.message ?? String(err));
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
@@ -83,14 +100,16 @@ export function ExportScreen(): React.JSX.Element {
         <ActionButton
           label="Export MIDI (coming soon)"
           color={colors.neonPink}
-          onPress={() => handleComingSoon('Export MIDI')}
-          disabled
+          onPress={handleExportMidi}
+          disabled={busy !== null}
+          loading={busy === 'midi'}
         />
         <ActionButton
           label="Export WAV (coming soon)"
           color={colors.neonOrange}
-          onPress={() => handleComingSoon('Export WAV')}
-          disabled
+          onPress={handleExportWav}
+          disabled={busy !== null}
+          loading={busy === 'wav'}
         />
       </View>
     </SafeAreaView>

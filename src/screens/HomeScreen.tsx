@@ -1,25 +1,70 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../app/AppNavigator';
 import { colors, spacing, typography } from '../theme';
+import {
+  listProjects,
+  loadProject,
+  type ProjectIndexEntry,
+} from '../persistence/projectStorage';
+import { useProjectStore } from '../state/projectStore';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const RECENT_PROJECTS = [
-  { id: '1', name: 'Demo Beat', date: '2025-03-15' },
-  { id: '2', name: 'Loop Test', date: '2025-03-14' },
-];
+function formatDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString();
+}
 
 export function HomeScreen(): React.JSX.Element {
   const navigation = useNavigation<NavProp>();
+  const setProject = useProjectStore((s) => s.setProject);
+  const [recent, setRecent] = useState<ProjectIndexEntry[]>([]);
+
+  const refresh = useCallback(async () => {
+    try {
+      const list = await listProjects();
+      setRecent(list.slice(0, 3));
+    } catch {
+      // Non-fatal: just leave Recent Projects empty if storage is unreadable.
+      setRecent([]);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const handleOpenRecent = useCallback(
+    async (entry: ProjectIndexEntry) => {
+      try {
+        const project = await loadProject(entry.id);
+        if (!project) {
+          Alert.alert('Not found', 'That project could not be loaded.');
+          await refresh();
+          return;
+        }
+        setProject(project);
+        navigation.navigate('Timeline');
+      } catch (err: any) {
+        Alert.alert('Load failed', err?.message ?? String(err));
+      }
+    },
+    [navigation, refresh, setProject],
+  );
 
   return (
     <ScrollView
@@ -45,15 +90,34 @@ export function HomeScreen(): React.JSX.Element {
         <Text style={styles.buttonText}>📁 Demo Project</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('ProjectList')}
+        activeOpacity={0.75}
+      >
+        <Text style={styles.buttonText}>📂 All Projects</Text>
+      </TouchableOpacity>
+
       <Text style={styles.sectionTitle}>Recent Projects</Text>
-      {RECENT_PROJECTS.length === 0 ? (
+      {recent.length === 0 ? (
         <Text style={styles.emptyText}>No recent projects yet.</Text>
       ) : (
-        RECENT_PROJECTS.map((project) => (
-          <View key={project.id} style={styles.projectItem}>
-            <Text style={styles.projectName}>{project.name}</Text>
-            <Text style={styles.projectDate}>{project.date}</Text>
-          </View>
+        recent.map((project) => (
+          <TouchableOpacity
+            key={project.id}
+            style={styles.projectItem}
+            onPress={() => handleOpenRecent(project)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Open project ${project.name}`}
+          >
+            <Text style={styles.projectName} numberOfLines={1}>
+              {project.name}
+            </Text>
+            <Text style={styles.projectDate}>
+              {formatDate(project.updatedAt)}
+            </Text>
+          </TouchableOpacity>
         ))
       )}
     </ScrollView>
@@ -117,6 +181,8 @@ const styles = StyleSheet.create({
   projectName: {
     color: colors.textPrimary,
     fontSize: typography.sizes.md,
+    flex: 1,
+    marginRight: spacing.sm,
   },
   projectDate: {
     color: colors.textSecondary,
