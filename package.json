@@ -20,7 +20,8 @@
     "@react-navigation/native": "latest",
     "@react-navigation/native-stack": "latest",
     "react-native-screens": "latest",
-    "react-native-safe-area-context": "latest"
+    "react-native-safe-area-context": "latest",
+    "zustand": "latest"
   },
   "devDependencies": {
     "@babel/core": "latest",
