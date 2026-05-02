@@ -72,7 +72,7 @@ export interface ISampleScheduler {
    */
   start(events: ScheduledEvent[], bpm: number, loop: boolean): void;
 
-  /** Stop playback immediately. */
+  /** Stop playback immediately. Resets playhead but preserves tick subscribers. */
   stop(): void;
 
   /**

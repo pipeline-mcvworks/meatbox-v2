@@ -46,21 +46,28 @@ export class SampleScheduler implements ISampleScheduler {
     };
   }
 
-  start(events: ScheduledEvent[], bpm: number, loop: boolean): void {
-    // Stop any prior run (clears interval + resets position). We deliberately
-    // do NOT clear tickCallbacks here — subscribers registered at mount must
-    // survive across start/stop cycles.
+  /**
+   * Internal: halt the running interval and reset playhead state.
+   * Does NOT touch tickCallbacks. Used by both start() (for clean
+   * re-entry) and the public stop().
+   */
+  private _resetPlayback(): void {
     if (this.intervalId !== null) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    this.currentBeat = 0;
+    this.nextEventIndex = 0;
+  }
+
+  start(events: ScheduledEvent[], bpm: number, loop: boolean): void {
+    // Halt any prior run and reset position. Subscribers are untouched.
+    this._resetPlayback();
 
     // Sort events by startBeat ascending
     this.events = [...events].sort((a, b) => a.startBeat - b.startBeat);
     this.bpm = bpm;
     this.loop = loop;
-    this.currentBeat = 0;
-    this.nextEventIndex = 0;
     this.lastTickMs = Date.now();
 
     // Compute total beats from last event (round up to next bar of 4)
@@ -76,14 +83,9 @@ export class SampleScheduler implements ISampleScheduler {
   }
 
   stop(): void {
-    if (this.intervalId !== null) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.currentBeat = 0;
-    this.nextEventIndex = 0;
-    // NOTE: tickCallbacks are intentionally preserved across stop().
-    // Subscribers register once at mount and unsubscribe at unmount.
+    // Halt interval + reset position. tickCallbacks are intentionally preserved
+    // across stop() — subscribers register once at mount and unsubscribe at unmount.
+    this._resetPlayback();
   }
 
   private _tick(): void {
@@ -136,7 +138,7 @@ export class SampleScheduler implements ISampleScheduler {
             // ignore
           }
         }
-        // Stop interval (callbacks are preserved).
+        // Halt interval (callbacks are preserved).
         if (this.intervalId !== null) {
           clearInterval(this.intervalId);
           this.intervalId = null;
