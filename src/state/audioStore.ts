@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { generatePeaksFromUri } from '../analysis/waveform';
+import { useProjectStore } from './projectStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +34,11 @@ export type AudioState = {
   setWaveformPeaks: (peaks: number[]) => void;
   setAnalysisStatus: (status: AnalysisStatus) => void;
   resetAudio: () => void;
+  /**
+   * Finalize a completed recording: store URI/duration, generate peaks via
+   * the waveform analyzer, push into both audioStore and projectStore.
+   */
+  finalizeRecording: (uri: string, durationSeconds: number) => Promise<void>;
 };
 
 // ---------------------------------------------------------------------------
@@ -63,4 +70,26 @@ export const useAudioStore = create<AudioState>((set) => ({
   setAnalysisStatus: (analysisStatus) => set({ analysisStatus }),
 
   resetAudio: () => set(initialAudioState),
+
+  finalizeRecording: async (uri, durationSeconds) => {
+    set({
+      currentRecordingUri: uri,
+      durationSeconds,
+      recordingStatus: 'stopped',
+      analysisStatus: 'pending',
+    });
+
+    try {
+      const peaks = await generatePeaksFromUri(uri, durationSeconds);
+      set({ waveformPeaks: peaks, analysisStatus: 'complete' });
+      useProjectStore.getState().setRawRecording({
+        uri,
+        durationSeconds,
+        peaks,
+        recordedAt: new Date().toISOString(),
+      });
+    } catch {
+      set({ analysisStatus: 'error' });
+    }
+  },
 }));
