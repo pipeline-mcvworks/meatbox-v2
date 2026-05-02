@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,9 +14,12 @@ import { TimelineBottomSheet } from '../components/timeline/TimelineBottomSheet'
 import { TransportControls } from '../components/transport/TransportControls';
 import { BpmStepper } from '../components/transport/BpmStepper';
 import { QuantizeSlider } from '../components/transport/QuantizeSlider';
+import { SampleScheduler } from '../audio/SampleScheduler';
+import { audioPlaybackService } from '../audio/AudioPlaybackService';
+import type { LaneType, ScheduledEvent } from '../audio/types';
 
 const LANE_NAMES = ['Kick', 'Snare', 'Hat', 'Perc', 'Unknown'] as const;
-const LANE_KEYS: Array<'kick' | 'snare' | 'hat' | 'perc' | 'unknown'> = ['kick', 'snare', 'hat', 'perc', 'unknown'];
+const LANE_KEYS: Array<LaneType> = ['kick', 'snare', 'hat', 'perc', 'unknown'];
 const BEATS_PER_BAR = 4;
 const DEFAULT_BARS = 8;
 const PIXELS_PER_BEAT = 80;
@@ -29,8 +32,32 @@ function snapBeat(rawBeat: number, strength: number): number {
   return rawBeat + (snapped - rawBeat) * strength;
 }
 
+// ---------------------------------------------------------------------------
+// Module-level scheduler singleton — lives outside React
+// ---------------------------------------------------------------------------
+const scheduler = new SampleScheduler(audioPlaybackService);
+
+// Pre-load all samples once at module load time (best-effort)
+const LANES_TO_LOAD: LaneType[] = ['kick', 'snare', 'hat', 'perc', 'unknown'];
+Promise.all(LANES_TO_LOAD.map((lane) => audioPlaybackService.loadSample(lane))).catch(
+  (err) => console.warn('Sample pre-load error:', err),
+);
+
 export function TimelineScreen(): React.JSX.Element {
-  const { events, bpm, loop, isPlaying, quantizeStrength, addEvent, updateEvent, removeEvent, setBpm, toggleLoop, togglePlay, setQuantizeStrength } = useProjectStore();
+  const {
+    events,
+    bpm,
+    loop,
+    isPlaying,
+    quantizeStrength,
+    addEvent,
+    updateEvent,
+    removeEvent,
+    setBpm,
+    toggleLoop,
+    togglePlay,
+    setQuantizeStrength,
+  } = useProjectStore();
   const { selectedEventId, setSelectedEventId } = useUiStore();
 
   const scale = useSharedValue(1);
@@ -51,7 +78,40 @@ export function TimelineScreen(): React.JSX.Element {
   const totalBeats = DEFAULT_BARS * BEATS_PER_BAR;
   const totalWidth = totalBeats * PIXELS_PER_BEAT * currentScale;
 
-  // Playhead animation
+  // ---------------------------------------------------------------------------
+  // Scheduler wiring: start/stop when isPlaying changes
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (isPlaying) {
+      // Build ScheduledEvent list from project events
+      const scheduledEvents: ScheduledEvent[] = events.map((e) => ({
+        startBeat: e.startBeat,
+        lane: (LANE_KEYS.includes(e.lane as LaneType) ? e.lane : 'unknown') as LaneType,
+        velocity: typeof e.velocity === 'number' ? e.velocity : 0.8,
+      }));
+
+      // Register tick callback to drive the visual playhead
+      // (re-register each time we start)
+      scheduler.onTick((beat) => {
+        playheadRef.current = beat;
+        setPlayheadBeat(beat);
+      });
+
+      scheduler.start(scheduledEvents, bpm, loop);
+    } else {
+      scheduler.stop();
+    }
+
+    return () => {
+      // Cleanup on unmount or before next effect run
+      scheduler.stop();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying]);
+
+  // ---------------------------------------------------------------------------
+  // Visual-only playhead animation (runs in parallel with scheduler ticks)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!isPlaying) {
       if (animFrameRef.current) {
@@ -63,7 +123,7 @@ export function TimelineScreen(): React.JSX.Element {
 
     const tick = (timestamp: number) => {
       if (!lastTimeRef.current) lastTimeRef.current = timestamp;
-      const delta = (timestamp - lastTimeRef.current) / 1000; // seconds
+      const delta = (timestamp - lastTimeRef.current) / 1000;
       lastTimeRef.current = timestamp;
 
       const beatsPerSecond = bpm / 60;
@@ -74,7 +134,7 @@ export function TimelineScreen(): React.JSX.Element {
         newBeat = 0;
       } else if (newBeat >= totalBeats) {
         newBeat = totalBeats;
-        togglePlay(); // stop at end
+        togglePlay();
       }
 
       playheadRef.current = newBeat;
@@ -152,7 +212,6 @@ export function TimelineScreen(): React.JSX.Element {
     setSheetEventId(null);
   }, []);
 
-  const selectedEvent = selectedEventId ? events.find(e => e.id === selectedEventId) : null;
   const sheetEvent = sheetEventId ? events.find(e => e.id === sheetEventId) : null;
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -181,7 +240,11 @@ export function TimelineScreen(): React.JSX.Element {
         <Animated.View style={[styles.timelineContainer, animatedStyle]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ width: totalWidth }}>
-              <TimelineGrid totalBeats={totalBeats} beatsPerBar={BEATS_PER_BAR} pixelsPerBeat={PIXELS_PER_BEAT * currentScale} />
+              <TimelineGrid
+                totalBeats={totalBeats}
+                beatsPerBar={BEATS_PER_BAR}
+                pixelsPerBeat={PIXELS_PER_BEAT * currentScale}
+              />
               {LANE_KEYS.map((laneKey, index) => (
                 <TimelineLane
                   key={laneKey}
