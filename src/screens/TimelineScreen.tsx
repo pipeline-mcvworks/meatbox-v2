@@ -37,12 +37,6 @@ function snapBeat(rawBeat: number, strength: number): number {
 // ---------------------------------------------------------------------------
 const scheduler = new SampleScheduler(audioPlaybackService);
 
-// Pre-load all samples once at module load time (best-effort)
-const LANES_TO_LOAD: LaneType[] = ['kick', 'snare', 'hat', 'perc', 'unknown'];
-Promise.all(LANES_TO_LOAD.map((lane) => audioPlaybackService.loadSample(lane))).catch(
-  (err) => console.warn('Sample pre-load error:', err),
-);
-
 export function TimelineScreen(): React.JSX.Element {
   const {
     events,
@@ -65,9 +59,6 @@ export function TimelineScreen(): React.JSX.Element {
   const [currentScale, setCurrentScale] = useState(1);
   const [playheadBeat, setPlayheadBeat] = useState(0);
   const [sheetEventId, setSheetEventId] = useState<string | null>(null);
-  const playheadRef = useRef<number>(0);
-  const animFrameRef = useRef<number | null>(null);
-  const lastTimeRef = useRef<number>(0);
   const isPlayingRef = useRef(isPlaying);
 
   // Keep ref in sync
@@ -77,6 +68,16 @@ export function TimelineScreen(): React.JSX.Element {
 
   const totalBeats = DEFAULT_BARS * BEATS_PER_BAR;
   const totalWidth = totalBeats * PIXELS_PER_BEAT * currentScale;
+
+  // ---------------------------------------------------------------------------
+  // Deferred sample pre-loading — runs after mount so Audio mode is set first
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const LANES_TO_LOAD: LaneType[] = ['kick', 'snare', 'hat', 'perc', 'unknown'];
+    Promise.all(LANES_TO_LOAD.map((lane) => audioPlaybackService.loadSample(lane))).catch(
+      (err) => console.warn('Sample pre-load error:', err),
+    );
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Scheduler wiring: start/stop when isPlaying changes
@@ -90,16 +91,17 @@ export function TimelineScreen(): React.JSX.Element {
         velocity: typeof e.velocity === 'number' ? e.velocity : 0.8,
       }));
 
-      // Register tick callback to drive the visual playhead
-      // (re-register each time we start)
+      // Register tick callback BEFORE start() so it's active for this session.
+      // onTick() replaces any previous callback, preventing accumulation.
       scheduler.onTick((beat) => {
-        playheadRef.current = beat;
         setPlayheadBeat(beat);
       });
 
       scheduler.start(scheduledEvents, bpm, loop);
     } else {
       scheduler.stop();
+      // Reset playhead to 0 when stopped
+      setPlayheadBeat(0);
     }
 
     return () => {
@@ -108,52 +110,6 @@ export function TimelineScreen(): React.JSX.Element {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying]);
-
-  // ---------------------------------------------------------------------------
-  // Visual-only playhead animation (runs in parallel with scheduler ticks)
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!isPlaying) {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = null;
-      }
-      return;
-    }
-
-    const tick = (timestamp: number) => {
-      if (!lastTimeRef.current) lastTimeRef.current = timestamp;
-      const delta = (timestamp - lastTimeRef.current) / 1000;
-      lastTimeRef.current = timestamp;
-
-      const beatsPerSecond = bpm / 60;
-      const beatDelta = delta * beatsPerSecond;
-      let newBeat = playheadRef.current + beatDelta;
-
-      if (loop && newBeat >= totalBeats) {
-        newBeat = 0;
-      } else if (newBeat >= totalBeats) {
-        newBeat = totalBeats;
-        togglePlay();
-      }
-
-      playheadRef.current = newBeat;
-      setPlayheadBeat(newBeat);
-
-      if (isPlayingRef.current) {
-        animFrameRef.current = requestAnimationFrame(tick);
-      }
-    };
-
-    lastTimeRef.current = 0;
-    animFrameRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
-    };
-  }, [isPlaying, bpm, loop, totalBeats, togglePlay]);
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate((event) => {

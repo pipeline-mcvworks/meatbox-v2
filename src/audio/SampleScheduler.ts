@@ -32,12 +32,23 @@ export class SampleScheduler implements ISampleScheduler {
     this.playbackService = playbackService;
   }
 
+  /**
+   * Register a tick callback. Replaces any previously registered callbacks.
+   * Call before start() to ensure the callback is active for the session.
+   */
   onTick(callback: TickCallback): void {
-    this.tickCallbacks.push(callback);
+    // Replace all callbacks with the new one to avoid accumulation across
+    // multiple play/stop cycles.
+    this.tickCallbacks = [callback];
   }
 
   start(events: ScheduledEvent[], bpm: number, loop: boolean): void {
+    // stop() clears the interval and resets position; it also clears tickCallbacks.
+    // We preserve tickCallbacks set via onTick() before start() is called by
+    // saving and restoring them.
+    const savedCallbacks = this.tickCallbacks.slice();
     this.stop();
+    this.tickCallbacks = savedCallbacks;
 
     // Sort events by startBeat ascending
     this.events = [...events].sort((a, b) => a.startBeat - b.startBeat);
@@ -66,6 +77,8 @@ export class SampleScheduler implements ISampleScheduler {
     }
     this.currentBeat = 0;
     this.nextEventIndex = 0;
+    // Clear tick callbacks so they don't accumulate across play/stop cycles.
+    this.tickCallbacks = [];
   }
 
   private _tick(): void {
@@ -109,7 +122,19 @@ export class SampleScheduler implements ISampleScheduler {
         }
       } else {
         newBeat = this.totalBeats;
+        // Save callbacks before stop() clears them
+        const callbacks = this.tickCallbacks.slice();
         this.stop();
+        this.currentBeat = newBeat;
+        // Notify with final beat position
+        for (const cb of callbacks) {
+          try {
+            cb(this.currentBeat);
+          } catch {
+            // ignore
+          }
+        }
+        return;
       }
     }
 
