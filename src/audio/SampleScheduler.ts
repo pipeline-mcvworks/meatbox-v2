@@ -33,22 +33,27 @@ export class SampleScheduler implements ISampleScheduler {
   }
 
   /**
-   * Register a tick callback. Replaces any previously registered callbacks.
-   * Call before start() to ensure the callback is active for the session.
+   * Register a tick callback. Returns an unsubscribe function.
+   * Multiple subscribers are supported. Callbacks persist across
+   * start()/stop() cycles — the scheduler does NOT clear subscribers
+   * on stop(). Callers should subscribe once at mount and unsubscribe
+   * on unmount.
    */
-  onTick(callback: TickCallback): void {
-    // Replace all callbacks with the new one to avoid accumulation across
-    // multiple play/stop cycles.
-    this.tickCallbacks = [callback];
+  onTick(callback: TickCallback): () => void {
+    this.tickCallbacks.push(callback);
+    return () => {
+      this.tickCallbacks = this.tickCallbacks.filter((c) => c !== callback);
+    };
   }
 
   start(events: ScheduledEvent[], bpm: number, loop: boolean): void {
-    // stop() clears the interval and resets position; it also clears tickCallbacks.
-    // We preserve tickCallbacks set via onTick() before start() is called by
-    // saving and restoring them.
-    const savedCallbacks = this.tickCallbacks.slice();
-    this.stop();
-    this.tickCallbacks = savedCallbacks;
+    // Stop any prior run (clears interval + resets position). We deliberately
+    // do NOT clear tickCallbacks here — subscribers registered at mount must
+    // survive across start/stop cycles.
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
 
     // Sort events by startBeat ascending
     this.events = [...events].sort((a, b) => a.startBeat - b.startBeat);
@@ -77,8 +82,8 @@ export class SampleScheduler implements ISampleScheduler {
     }
     this.currentBeat = 0;
     this.nextEventIndex = 0;
-    // Clear tick callbacks so they don't accumulate across play/stop cycles.
-    this.tickCallbacks = [];
+    // NOTE: tickCallbacks are intentionally preserved across stop().
+    // Subscribers register once at mount and unsubscribe at unmount.
   }
 
   private _tick(): void {
@@ -122,17 +127,19 @@ export class SampleScheduler implements ISampleScheduler {
         }
       } else {
         newBeat = this.totalBeats;
-        // Save callbacks before stop() clears them
-        const callbacks = this.tickCallbacks.slice();
-        this.stop();
         this.currentBeat = newBeat;
-        // Notify with final beat position
-        for (const cb of callbacks) {
+        // Notify subscribers with final beat position before stopping.
+        for (const cb of this.tickCallbacks) {
           try {
             cb(this.currentBeat);
           } catch {
             // ignore
           }
+        }
+        // Stop interval (callbacks are preserved).
+        if (this.intervalId !== null) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
         }
         return;
       }

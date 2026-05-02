@@ -77,7 +77,9 @@ export interface ISampleScheduler {
 
   /**
    * Register a callback that fires on every scheduler tick
-   * with the current playhead beat position.
+   * with the current playhead beat position. Returns an
+   * unsubscribe function. Subscribers persist across start/stop;
+   * subscribe once at mount, unsubscribe at unmount.
    */
-  onTick(callback: TickCallback): void;
+  onTick(callback: TickCallback): () => void;
 }

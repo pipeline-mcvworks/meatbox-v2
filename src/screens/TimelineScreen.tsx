@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -37,6 +37,10 @@ function snapBeat(rawBeat: number, strength: number): number {
 // ---------------------------------------------------------------------------
 const scheduler = new SampleScheduler(audioPlaybackService);
 
+// Lanes that have actual sample assets to load.
+// 'unknown' is excluded — there is no sample for it; it falls back at play time.
+const LANES_WITH_SAMPLES: LaneType[] = ['kick', 'snare', 'hat', 'perc'];
+
 export function TimelineScreen(): React.JSX.Element {
   const {
     events,
@@ -59,55 +63,46 @@ export function TimelineScreen(): React.JSX.Element {
   const [currentScale, setCurrentScale] = useState(1);
   const [playheadBeat, setPlayheadBeat] = useState(0);
   const [sheetEventId, setSheetEventId] = useState<string | null>(null);
-  const isPlayingRef = useRef(isPlaying);
-
-  // Keep ref in sync
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
 
   const totalBeats = DEFAULT_BARS * BEATS_PER_BAR;
   const totalWidth = totalBeats * PIXELS_PER_BEAT * currentScale;
 
   // ---------------------------------------------------------------------------
-  // Deferred sample pre-loading — runs after mount so Audio mode is set first
+  // Mount-only: pre-load samples and register the single tick subscriber.
+  // The scheduler's onTick is the SOLE driver of playheadBeat — there is no
+  // separate rAF visual loop.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const LANES_TO_LOAD: LaneType[] = ['kick', 'snare', 'hat', 'perc', 'unknown'];
-    Promise.all(LANES_TO_LOAD.map((lane) => audioPlaybackService.loadSample(lane))).catch(
+    Promise.all(LANES_WITH_SAMPLES.map((lane) => audioPlaybackService.loadSample(lane))).catch(
       (err) => console.warn('Sample pre-load error:', err),
     );
+
+    const unsubscribe = scheduler.onTick((beat) => {
+      setPlayheadBeat(beat);
+    });
+
+    return () => {
+      unsubscribe();
+      scheduler.stop();
+    };
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Scheduler wiring: start/stop when isPlaying changes
+  // Scheduler wiring: start/stop when isPlaying changes.
+  // The tick subscription above remains active across these transitions.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (isPlaying) {
-      // Build ScheduledEvent list from project events
       const scheduledEvents: ScheduledEvent[] = events.map((e) => ({
         startBeat: e.startBeat,
         lane: (LANE_KEYS.includes(e.lane as LaneType) ? e.lane : 'unknown') as LaneType,
         velocity: typeof e.velocity === 'number' ? e.velocity : 0.8,
       }));
-
-      // Register tick callback BEFORE start() so it's active for this session.
-      // onTick() replaces any previous callback, preventing accumulation.
-      scheduler.onTick((beat) => {
-        setPlayheadBeat(beat);
-      });
-
       scheduler.start(scheduledEvents, bpm, loop);
     } else {
       scheduler.stop();
-      // Reset playhead to 0 when stopped
       setPlayheadBeat(0);
     }
-
-    return () => {
-      // Cleanup on unmount or before next effect run
-      scheduler.stop();
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying]);
 
