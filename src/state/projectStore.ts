@@ -46,6 +46,21 @@ export type Kit = {
   sounds: KitSound[];
 };
 
+/**
+ * Reference to the most recent raw mouth-percussion recording, used by the
+ * Analyze screen to render a waveform and (eventually) drive onset detection.
+ */
+export type RawRecordingRef = {
+  /** Local file URI of the recorded audio. */
+  uri: string;
+  /** Duration of the recording in seconds. */
+  durationSeconds: number;
+  /** Normalised peak samples (values in [0, 1]) for waveform rendering. */
+  peaks: number[];
+  /** ISO timestamp of when the recording finished. */
+  recordedAt: string;
+};
+
 export type Project = {
   id: string;
   name: string;
@@ -156,6 +171,8 @@ const DEMO_PROJECT: Project = {
 
 export type ProjectState = {
   project: Project;
+  /** Most recent raw mouth recording, if any. */
+  rawRecording: RawRecordingRef | null;
 
   // Actions
   setProject: (project: Project) => void;
@@ -163,10 +180,12 @@ export type ProjectState = {
   addEvent: (laneId: string, event: AudioEvent) => void;
   updateEvent: (laneId: string, eventId: string, patch: Partial<AudioEvent>) => void;
   deleteEvent: (laneId: string, eventId: string) => void;
+  setRawRecording: (rec: RawRecordingRef | null) => void;
 };
 
 export const useProjectStore = create<ProjectState>((set) => ({
   project: DEMO_PROJECT,
+  rawRecording: null,
 
   setProject: (project) =>
     set({ project }),
@@ -223,4 +242,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ),
       },
     })),
+
+  setRawRecording: (rec) => set({ rawRecording: rec }),
 }));
