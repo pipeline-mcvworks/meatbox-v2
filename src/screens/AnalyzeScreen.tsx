@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import { SensitivitySlider } from '../components/controls/SensitivitySlider';
 import { Waveform } from '../components/waveform';
 import { useProjectStore } from '../state/projectStore';
 import { useAudioStore } from '../state/audioStore';
+import { createTimelineEvents } from '../analysis/createTimelineEvents';
+import type { TimelineEventLabel } from '../state/projectStore';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'Analyze'>;
 
@@ -22,12 +24,42 @@ export function AnalyzeScreen(): React.JSX.Element {
   const [scrubPosition, setScrubPosition] = useState(0);
 
   const rawRecording = useProjectStore((s) => s.rawRecording);
+  const project = useProjectStore((s) => s.project);
+  const setTimelineEvents = useProjectStore((s) => s.setTimelineEvents);
   const audioPeaksFallback = useAudioStore((s) => s.waveformPeaks);
   const audioDurationFallback = useAudioStore((s) => s.durationSeconds);
 
   const peaks = rawRecording?.peaks ?? audioPeaksFallback;
   const duration = rawRecording?.durationSeconds ?? audioDurationFallback;
   const hasPeaks = peaks.length > 0;
+
+  const events = project.events;
+
+  const summary = useMemo(() => {
+    if (events.length === 0) return null;
+    const counts: Record<TimelineEventLabel, number> = {
+      kick: 0,
+      snare: 0,
+      hat: 0,
+      perc: 0,
+      unknown: 0,
+    };
+    for (const ev of events) counts[ev.label] += 1;
+    return counts;
+  }, [events]);
+
+  const handleAutoClean = (): void => {
+    if (!hasPeaks || duration <= 0) return;
+    const newEvents = createTimelineEvents({
+      peaks,
+      durationSeconds: duration,
+      bpm: project.bpm,
+      sensitivity,
+      quantizeStrength: 100,
+      previousEvents: project.events,
+    });
+    setTimelineEvents(newEvents);
+  };
 
   return (
     <View style={styles.container}>
@@ -64,19 +96,26 @@ export function AnalyzeScreen(): React.JSX.Element {
       {/* Detection Summary Text */}
       <View style={styles.summaryContainer}>
         <Text style={styles.summaryTitle}>Detection Summary</Text>
-        <Text style={styles.summaryText}>
-          {hasPeaks
-            ? 'Waveform loaded. Onset detection runs in a later step.'
-            : 'No audio analyzed yet. Record or import a track to see detection results.'}
-        </Text>
+        {summary ? (
+          <Text style={styles.summaryText}>
+            {events.length} hits · kick {summary.kick} · snare {summary.snare} · hat {summary.hat}
+            {summary.perc > 0 ? ` · perc ${summary.perc}` : ''}
+            {summary.unknown > 0 ? ` · ? ${summary.unknown}` : ''}
+          </Text>
+        ) : (
+          <Text style={styles.summaryText}>
+            {hasPeaks
+              ? 'Waveform loaded. Tap Auto Clean to detect hits.'
+              : 'No audio analyzed yet. Record or import a track to see detection results.'}
+          </Text>
+        )}
       </View>
 
       {/* Action Buttons */}
       <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => {
-          // Placeholder: auto clean action
-        }}
+        style={[styles.actionButton, !hasPeaks && styles.actionButtonDisabled]}
+        onPress={handleAutoClean}
+        disabled={!hasPeaks}
         activeOpacity={0.75}
       >
         <Text style={styles.actionButtonText}>Auto Clean</Text>
@@ -182,6 +221,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionButtonDisabled: {
+    opacity: 0.4,
   },
   actionButtonText: {
     color: colors.textPrimary,

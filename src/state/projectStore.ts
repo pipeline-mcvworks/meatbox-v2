@@ -61,6 +61,31 @@ export type RawRecordingRef = {
   recordedAt: string;
 };
 
+/**
+ * Output of the analysis pipeline (T-008). One per detected hit.
+ *
+ * `originalTimeSeconds` is the unmodified onset time as detected. It's
+ * preserved across re-runs of the pipeline whenever a hit at the same
+ * approximate time is re-detected, so the user never loses their record
+ * of where a hit really was.
+ *
+ * `quantizedTimeSeconds` is the snapped time used for playback / display.
+ */
+export type TimelineEventLabel = 'kick' | 'snare' | 'hat' | 'perc' | 'unknown';
+
+export type TimelineEvent = {
+  id: string;
+  label: TimelineEventLabel;
+  /** [0, 1] classifier confidence. */
+  confidence: number;
+  /** Original detected onset time in seconds. */
+  originalTimeSeconds: number;
+  /** Quantized onset time in seconds. */
+  quantizedTimeSeconds: number;
+  /** Amplitude of the detected onset, in [0, 1]. */
+  amplitude: number;
+};
+
 export type Project = {
   id: string;
   name: string;
@@ -69,6 +94,8 @@ export type Project = {
   loopLengthBeats: number;
   lanes: Lane[];
   kit: Kit;
+  /** Analysis pipeline output for the current recording. */
+  events: TimelineEvent[];
   createdAt: string;
   updatedAt: string;
 };
@@ -95,6 +122,7 @@ const DEMO_PROJECT: Project = {
   bpm: 90,
   loopLengthBeats: 16,
   kit: DEMO_KIT,
+  events: [],
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   lanes: [
@@ -181,6 +209,10 @@ export type ProjectState = {
   updateEvent: (laneId: string, eventId: string, patch: Partial<AudioEvent>) => void;
   deleteEvent: (laneId: string, eventId: string) => void;
   setRawRecording: (rec: RawRecordingRef | null) => void;
+  /** Replace the analysis pipeline output. */
+  setTimelineEvents: (events: TimelineEvent[]) => void;
+  /** Clear analysis pipeline output. */
+  clearTimelineEvents: () => void;
 };
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -244,4 +276,22 @@ export const useProjectStore = create<ProjectState>((set) => ({
     })),
 
   setRawRecording: (rec) => set({ rawRecording: rec }),
+
+  setTimelineEvents: (events) =>
+    set((state) => ({
+      project: {
+        ...state.project,
+        events,
+        updatedAt: new Date().toISOString(),
+      },
+    })),
+
+  clearTimelineEvents: () =>
+    set((state) => ({
+      project: {
+        ...state.project,
+        events: [],
+        updatedAt: new Date().toISOString(),
+      },
+    })),
 }));
