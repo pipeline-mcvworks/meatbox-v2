@@ -4,10 +4,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  PinchGestureHandler,
-  PinchGestureHandlerGestureEvent,
 } from 'react-native-reanimated';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { colors, spacing, typography } from '../theme';
 import { useProjectStore } from '../stores/projectStore';
 import { useUiStore } from '../stores/uiStore';
@@ -37,6 +35,12 @@ export function TimelineScreen(): React.JSX.Element {
   const playheadRef = useRef<number>(0);
   const animFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
+  const isPlayingRef = useRef(isPlaying);
+
+  // Keep ref in sync
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const totalBeats = DEFAULT_BARS * BEATS_PER_BAR;
   const totalWidth = totalBeats * PIXELS_PER_BEAT * currentScale;
@@ -70,7 +74,7 @@ export function TimelineScreen(): React.JSX.Element {
       playheadRef.current = newBeat;
       setPlayheadBeat(newBeat);
 
-      if (isPlaying) {
+      if (isPlayingRef.current) {
         animFrameRef.current = requestAnimationFrame(tick);
       }
     };
@@ -85,22 +89,22 @@ export function TimelineScreen(): React.JSX.Element {
     };
   }, [isPlaying, bpm, loop, totalBeats, togglePlay]);
 
-  const onPinch = useCallback((event: PinchGestureHandlerGestureEvent) => {
-    const newScale = savedScale.value * event.nativeEvent.scale;
-    scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
-    setCurrentScale(scale.value);
-  }, []);
-
-  const onPinchEnd = useCallback(() => {
-    savedScale.value = scale.value;
-  }, []);
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      const newScale = savedScale.value * event.scale;
+      scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
+      setCurrentScale(scale.value);
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+    });
 
   const handleSelectEvent = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
   }, [setSelectedEventId]);
 
   const handleMoveEvent = useCallback((eventId: string, newStartBeat: number) => {
-    const snapped = Math.round(newStartBeat / (1 / quantizeStrength)) * (1 / quantizeStrength);
+    const snapped = Math.round(newStartBeat / (quantizeStrength === 0 ? 1 : 1 / quantizeStrength)) * (quantizeStrength === 0 ? 1 : 1 / quantizeStrength);
     updateEvent(eventId, { startBeat: Math.max(0, snapped) });
   }, [updateEvent, quantizeStrength]);
 
@@ -130,6 +134,10 @@ export function TimelineScreen(): React.JSX.Element {
     updateEvent(eventId, { velocity: newVelocity });
   }, [updateEvent]);
 
+  const handleRequestEdit = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+  }, [setSelectedEventId]);
+
   const selectedEvent = selectedEventId ? events.find(e => e.id === selectedEventId) : null;
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -154,7 +162,7 @@ export function TimelineScreen(): React.JSX.Element {
         pixelsPerBeat={PIXELS_PER_BEAT * currentScale}
       />
 
-      <PinchGestureHandler onGestureEvent={onPinch} onEnded={onPinchEnd}>
+      <GestureDetector gesture={pinchGesture}>
         <Animated.View style={[styles.timelineContainer, animatedStyle]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ width: totalWidth }}>
@@ -169,12 +177,13 @@ export function TimelineScreen(): React.JSX.Element {
                   selectedEventId={selectedEventId}
                   onSelectEvent={handleSelectEvent}
                   onMoveEvent={handleMoveEvent}
+                  onRequestEdit={handleRequestEdit}
                 />
               ))}
             </View>
           </ScrollView>
         </Animated.View>
-      </PinchGestureHandler>
+      </GestureDetector>
 
       {selectedEvent && (
         <TimelineBottomSheet

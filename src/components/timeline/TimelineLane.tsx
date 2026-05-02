@@ -12,6 +12,7 @@ interface TimelineLaneProps {
   selectedEventId: string | null;
   onSelectEvent: (eventId: string) => void;
   onMoveEvent: (eventId: string, newStartBeat: number) => void;
+  onRequestEdit: (eventId: string) => void;
 }
 
 export function TimelineLane({
@@ -22,6 +23,7 @@ export function TimelineLane({
   selectedEventId,
   onSelectEvent,
   onMoveEvent,
+  onRequestEdit,
 }: TimelineLaneProps): React.JSX.Element {
   return (
     <View style={styles.container}>
@@ -34,6 +36,7 @@ export function TimelineLane({
             pixelsPerBeat={pixelsPerBeat}
             isSelected={event.id === selectedEventId}
             onSelect={() => onSelectEvent(event.id)}
+            onLongPress={() => onRequestEdit(event.id)}
             onMove={(newStartBeat) => onMoveEvent(event.id, newStartBeat)}
           />
         ))}

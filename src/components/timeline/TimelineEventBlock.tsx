@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet, Pressable, PanResponder } from 'react-native';
 import { colors } from '../../theme';
 import { TimelineEvent } from '../../stores/projectStore';
@@ -8,6 +8,7 @@ interface TimelineEventBlockProps {
   pixelsPerBeat: number;
   isSelected: boolean;
   onSelect: () => void;
+  onLongPress: () => void;
   onMove: (newStartBeat: number) => void;
 }
 
@@ -27,6 +28,7 @@ export function TimelineEventBlock({
   pixelsPerBeat,
   isSelected,
   onSelect,
+  onLongPress,
   onMove,
 }: TimelineEventBlockProps): React.JSX.Element {
   const startXRef = useRef(0);
@@ -51,13 +53,18 @@ export function TimelineEventBlock({
     })
   ).current;
 
+  // Recreate panResponder when pixelsPerBeat or event.startBeat change
+  useEffect(() => {
+    panResponder.panHandlers;
+  }, [pixelsPerBeat, event.startBeat]);
+
   const blockWidth = Math.max(MIN_BLOCK_WIDTH, pixelsPerBeat * 0.8);
   const left = event.startBeat * pixelsPerBeat;
 
   return (
     <Pressable
       onPress={onSelect}
-      onLongPress={onSelect}
+      onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.block,
         {
