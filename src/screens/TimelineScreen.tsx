@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, ScrollView, Dimensions, Pressable } from 'react
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
 } from 'react-native-reanimated';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { colors, spacing, typography } from '../theme';
@@ -23,6 +22,12 @@ const DEFAULT_BARS = 8;
 const PIXELS_PER_BEAT = 80;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
+const GRID_DIVISION = 0.25; // 16th notes
+
+function snapBeat(rawBeat: number, strength: number): number {
+  const snapped = Math.round(rawBeat / GRID_DIVISION) * GRID_DIVISION;
+  return rawBeat + (snapped - rawBeat) * strength;
+}
 
 export function TimelineScreen(): React.JSX.Element {
   const { events, bpm, loop, isPlaying, quantizeStrength, addEvent, updateEvent, removeEvent, setBpm, toggleLoop, togglePlay, setQuantizeStrength } = useProjectStore();
@@ -32,6 +37,7 @@ export function TimelineScreen(): React.JSX.Element {
   const savedScale = useSharedValue(1);
   const [currentScale, setCurrentScale] = useState(1);
   const [playheadBeat, setPlayheadBeat] = useState(0);
+  const [sheetEventId, setSheetEventId] = useState<string | null>(null);
   const playheadRef = useRef<number>(0);
   const animFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
@@ -103,8 +109,13 @@ export function TimelineScreen(): React.JSX.Element {
     setSelectedEventId(eventId);
   }, [setSelectedEventId]);
 
+  const handleLongPressEvent = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setSheetEventId(eventId);
+  }, [setSelectedEventId]);
+
   const handleMoveEvent = useCallback((eventId: string, newStartBeat: number) => {
-    const snapped = Math.round(newStartBeat / (quantizeStrength === 0 ? 1 : 1 / quantizeStrength)) * (quantizeStrength === 0 ? 1 : 1 / quantizeStrength);
+    const snapped = snapBeat(newStartBeat, quantizeStrength);
     updateEvent(eventId, { startBeat: Math.max(0, snapped) });
   }, [updateEvent, quantizeStrength]);
 
@@ -113,6 +124,7 @@ export function TimelineScreen(): React.JSX.Element {
     if (selectedEventId === eventId) {
       setSelectedEventId(null);
     }
+    setSheetEventId(null);
   }, [removeEvent, selectedEventId, setSelectedEventId]);
 
   const handleDuplicateEvent = useCallback((eventId: string) => {
@@ -124,21 +136,24 @@ export function TimelineScreen(): React.JSX.Element {
         startBeat: event.startBeat + 1,
       });
     }
+    setSheetEventId(null);
   }, [events, addEvent]);
 
   const handleLaneChange = useCallback((eventId: string, newLane: string) => {
     updateEvent(eventId, { lane: newLane as any });
+    setSheetEventId(null);
   }, [updateEvent]);
 
   const handleVelocityChange = useCallback((eventId: string, newVelocity: number) => {
     updateEvent(eventId, { velocity: newVelocity });
   }, [updateEvent]);
 
-  const handleRequestEdit = useCallback((eventId: string) => {
-    setSelectedEventId(eventId);
-  }, [setSelectedEventId]);
+  const handleCloseSheet = useCallback(() => {
+    setSheetEventId(null);
+  }, []);
 
   const selectedEvent = selectedEventId ? events.find(e => e.id === selectedEventId) : null;
+  const sheetEvent = sheetEventId ? events.find(e => e.id === sheetEventId) : null;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -177,7 +192,7 @@ export function TimelineScreen(): React.JSX.Element {
                   selectedEventId={selectedEventId}
                   onSelectEvent={handleSelectEvent}
                   onMoveEvent={handleMoveEvent}
-                  onRequestEdit={handleRequestEdit}
+                  onRequestEdit={handleLongPressEvent}
                 />
               ))}
             </View>
@@ -185,14 +200,14 @@ export function TimelineScreen(): React.JSX.Element {
         </Animated.View>
       </GestureDetector>
 
-      {selectedEvent && (
+      {sheetEvent && (
         <TimelineBottomSheet
-          event={selectedEvent}
+          event={sheetEvent}
           onDelete={handleDeleteEvent}
           onDuplicate={handleDuplicateEvent}
           onLaneChange={handleLaneChange}
           onVelocityChange={handleVelocityChange}
-          onClose={() => setSelectedEventId(null)}
+          onClose={handleCloseSheet}
         />
       )}
     </GestureHandlerRootView>
