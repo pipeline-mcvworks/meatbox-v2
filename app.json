@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "mouthbeat-machine",
+    "slug": "mouthbeat-machine",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0f"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

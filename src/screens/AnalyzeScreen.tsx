@@ -1,0 +1,33 @@
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { colors, spacing, typography } from '../theme';
+
+export function AnalyzeScreen(): React.JSX.Element {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Analyze</Text>
+      <Text style={styles.placeholder}>Audio analysis interface coming soon.</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  title: {
+    fontSize: typography.sizes.xxl,
+    fontWeight: typography.weights.bold,
+    color: colors.neonCyan,
+    marginBottom: spacing.md,
+  },
+  placeholder: {
+    fontSize: typography.sizes.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+});
