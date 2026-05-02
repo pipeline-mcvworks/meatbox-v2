@@ -21,7 +21,7 @@ export function TransportControls({
   totalBeats,
   pixelsPerBeat,
 }: TransportControlsProps): React.JSX.Element {
-  const playheadPosition = (playheadBeat / totalBeats) * (totalBeats * pixelsPerBeat);
+  const playheadPosition = playheadBeat * pixelsPerBeat;
 
   return (
     <View style={styles.container}>
